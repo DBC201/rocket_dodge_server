@@ -1,10 +1,11 @@
 {
   "name": "rocket-dodge-server",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "a website where you can play games",
   "main": "main.js",
   "dependencies": {
     "bcrypt": "^5.0.1",
+    "better-sqlite3": "^7.4.4",
     "body-parser": "^1.19.0",
     "connect-redis": "^4.0.4",
     "dotenv": "^8.6.0",
@@ -14,10 +15,8 @@
     "express-useragent": "^1.0.15",
     "qs": "^6.10.1",
     "redis": "^3.1.2",
-    "sqlite3": "^4.2.0",
     "yargs": "^16.2.0"
   },
-  "devDependencies": {},
   "scripts": {
     "test": "node main.js -n -r"
   },
