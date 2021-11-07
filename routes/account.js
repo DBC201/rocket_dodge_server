@@ -1,7 +1,7 @@
 const express = require("./imports").express;
 const router = express.Router();
 
-const database = require("./imports").database;
+const database_utils = require("./imports").database_utils;
 const bcrypt = require("./imports").bcrypt;
 const crypto = require("./imports").crypto;
 
@@ -45,13 +45,9 @@ router.get('/account/logout', function (req, res) {
                 let ar2 = arr[i].split("=");
                 // remember me cookie's selector starts with 'rem'
                 if (ar2[0].substring(0, 3) === "rem") {
-                    selector = ar2[0];
+                    let selector = ar2[0];
                     res.clearCookie(selector);
-                    database.run("DELETE FROM auth_tokens WHERE selector = ?", [selector], function (err) {
-                        if (err) {
-                            console.log(err);
-                        }
-                    });
+                    database_utils.run_query("DELETE FROM auth_tokens WHERE selector = ?", [selector]);
                 }
             }
         }
@@ -69,54 +65,43 @@ router.get("/account/delete_account", function (req, res) {
     }
 });
 
-router.post("/account/delete", function (req, res) {
+router.post("/account/delete", async (req, res) => {
     if (req.session.loggedin) {
-        database.get("SELECT password FROM ACCOUNTS WHERE username = ?", [req.session.username], async (err, row) => {
-            if (err) {
-                console.log(err);
-            }
-            if (row === undefined) {
+        let rows = database_utils.run_query("SELECT password FROM ACCOUNTS WHERE username = ?", [req.session.username]);
+        if (rows === undefined) {
+            res.render("message", {
+                loggedin: false,
+                message: "Error deleting account"
+            });
+        } else {
+            let row = rows[0];
+            let pass_check = await bcrypt.compare(req.body.password, row.password);
+            if (pass_check) {
+                for (let i=0; i<game_list.length; i++) {
+                    database_utils.run_query(`DELETE FROM ${game_list[i]} WHERE username = ?`, [req.session.username]);
+                }
+                database_utils.run_query("DELETE FROM auth_tokens WHERE username = ?", [req.session.username]);
+                database_utils.run_query("DELETE FROM accounts WHERE username = ?", [req.session.username]);
+                req.session.destroy();
+                let cookies = req.headers.cookie;
+                if (cookies) {
+                    let arr = cookies.split('; ');
+                    for (let i in arr) {
+                        let ar2 = arr[i].split("=");
+                        res.clearCookie(ar2[0]);
+                    }
+                }
                 res.render("message", {
                     loggedin: false,
-                    message: "Error deleting account"
+                    message: "Account succesfully deleted!"
                 });
             } else {
-                let pass_check = await bcrypt.compare(req.body.password, row.password);
-                if (pass_check) {
-                    database.run("DELETE FROM accounts WHERE username = ?", [req.session.username], function (err) {
-                        console.log(err);
-                    });
-                    for (let i=0; i<game_list.length; i++) {
-                        database.run(`DELETE FROM ${game_list[i]} WHERE username = ?`, [req.session.username], function (err) {
-                            console.log(err);
-                        });
-                    }
-                    database.run("DELETE FROM auth_tokens WHERE username = ?", [req.session.username], function (err) {
-                        if (err) {
-                            console.log(err);
-                        }
-                    });
-                    req.session.destroy();
-                    let cookies = req.headers.cookie;
-                    if (cookies) {
-                        let arr = cookies.split('; ');
-                        for (let i in arr) {
-                            let ar2 = arr[i].split("=");
-                            res.clearCookie(ar2[0]);
-                        }
-                    }
-                    res.render("message", {
-                        loggedin: false,
-                        message: "Account succesfully deleted!"
-                    });
-                } else {
-                    res.render("message", {
-                        loggedin: req.session.loggedin,
-                        message: "Wrong password!"
-                    });
-                }
+                res.render("message", {
+                    loggedin: req.session.loggedin,
+                    message: "Wrong password!"
+                });
             }
-        });
+        }
     } else {
         res.redirect("/account/login");
     }
@@ -126,29 +111,29 @@ router.post('/account/auth', async (req, res) => {
     let username_input = req.body.username;
     let rememberMe = req.body.rememberMe;
     if (username_input) {
-        database.get('SELECT password FROM accounts WHERE username = ?', username_input, async (error, result) => {
-            if (result) {
-                let pass_check = await bcrypt.compare(req.body.password, result.password);
-                if (pass_check) {
-                    req.session.loggedin = true;
-                    req.session.username = username_input;
-                    if (rememberMe) {
-                        firstRememberMe(req, res);
-                    }
-                    res.redirect("/profile/me");
-                } else {
-                    res.render("message", {
-                        loggedin: req.session.loggedin,
-                        message: "Wrong password!"
-                    });
+        let rows = database_utils.run_query('SELECT password FROM accounts WHERE username = ?', [username_input]);
+        if (rows && rows.length > 0) {
+            let result = rows[0];
+            let pass_check = await bcrypt.compare(req.body.password, result.password);
+            if (pass_check) {
+                req.session.loggedin = true;
+                req.session.username = username_input;
+                if (rememberMe) {
+                    await firstRememberMe(req, res);
                 }
+                res.redirect("/profile/me");
             } else {
                 res.render("message", {
                     loggedin: req.session.loggedin,
-                    message: "Wrong username!"
+                    message: "Wrong password!"
                 });
             }
-        });
+        } else {
+            res.render("message", {
+                loggedin: req.session.loggedin,
+                message: "Wrong username!"
+            });
+        }
     } else {
         res.render("message", {
             loggedin: req.session.loggedin,
@@ -170,21 +155,16 @@ router.post('/account/signup', async (req, res) => {
         try {
             let salt = await bcrypt.genSalt();
             let hashedpassword = await bcrypt.hash(password_input, salt);
-            database.get('SELECT * FROM accounts WHERE username = ?', username_input, function (error, result) {
-                if (result) {
-                    res.render("message", {
-                        loggedin: req.session.loggedin,
-                        message: "That username is taken, try again."
-                    });
-                } else {
-                    database.get("INSERT INTO accounts(username,password) VALUES(?,?)", [username_input, hashedpassword], function (err) {
-                        if (err) {
-                            console.log(err);
-                        }
-                    });
-                    res.redirect("/account/login");
-                }
-            });
+            let result = database_utils.run_query('SELECT * FROM accounts WHERE username = ?', [username_input]);
+            if (result && result.length > 0) {
+                res.render("message", {
+                    loggedin: req.session.loggedin,
+                    message: "That username is taken, try again."
+                });
+            } else {
+                database_utils.run_query("INSERT INTO accounts(username,password) VALUES(?,?)", [username_input, hashedpassword]);
+                res.redirect("/account/login");
+            }
         } catch (e) {
             console.log(e);
             res.redirect('/account/register');
@@ -205,29 +185,23 @@ router.post("/account/update_password", async (req, res) => {
                 message: crediential_response(req.session.username, req.body.new_password)
             });
         } else {
-            database.get("SELECT password FROM ACCOUNTS WHERE username = ?", [req.session.username], async (err, row) => {
-                if (err) {
-                    console.log(err);
-                }
-                let pass_check = await bcrypt.compare(req.body.old_password, row.password);
-                if (pass_check) {
-                    let update_query = "UPDATE accounts SET password = ? WHERE username = ?";
-                    let salt = await bcrypt.genSalt();
-                    let hashedpassword = await bcrypt.hash(req.body.new_password, salt);
-                    database.run(update_query, [hashedpassword, req.session.username], function (err) {
-                        console.log(err);
-                    });
-                    res.render("message", {
-                        loggedin: req.session.loggedin,
-                        message: "Password updated succesfully!"
-                    });
-                } else {
-                    res.render("message", {
-                        loggedin: req.session.loggedin,
-                        message: "Wrong password!"
-                    });
-                }
-            });
+            let row = database_utils.run_query("SELECT password FROM ACCOUNTS WHERE username = ?", [req.session.username])[0];
+            let pass_check = await bcrypt.compare(req.body.old_password, row.password);
+            if (pass_check) {
+                let update_query = "UPDATE accounts SET password = ? WHERE username = ?";
+                let salt = await bcrypt.genSalt();
+                let hashedpassword = await bcrypt.hash(req.body.new_password, salt);
+                database_utils.run_query(update_query, [hashedpassword, req.session.username]);
+                res.render("message", {
+                    loggedin: req.session.loggedin,
+                    message: "Password updated succesfully!"
+                });
+            } else {
+                res.render("message", {
+                    loggedin: req.session.loggedin,
+                    message: "Wrong password!"
+                });
+            }
         }
     } else {
         res.redirect("/account/login");
@@ -275,13 +249,9 @@ async function firstRememberMe(req, res) {
 
     let date = new Date();
     date.setTime(date.getTime() + (2592000000));
-    var expiry = date.toISOString();
+    let expiry = date.toISOString();
 
-    database.get("INSERT INTO auth_tokens(selector, hashedValidator, username, expires) VALUES(?, ?, ?, ?)", [selector, hashedValidator, req.session.username, expiry], function (err) {
-        if (err) {
-            console.log(err);
-        }
-    });
+    database_utils.run_query("INSERT INTO auth_tokens(selector, hashedValidator, username, expires) VALUES(?, ?, ?, ?)", [selector, hashedValidator, req.session.username, expiry]);
 }
 
 module.exports = router;

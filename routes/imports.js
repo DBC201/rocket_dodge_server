@@ -3,7 +3,7 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const express = require("express");
-const database = require("./initialize_database");
+const database_utils = require("../database/utils.js");
 const game_list = ["rocket_dodge", "hold_dodge", "hold_dodge_accelerated", "touch_dodge"];
 const game_name_list = {
   "rocket_dodge": "Rocket Dodge",
@@ -18,7 +18,7 @@ module.exports = {
   bcrypt: bcrypt,
   crypto: crypto,
   express: express,
-  database: database,
+  database_utils: database_utils,
   game_list: game_list,
   game_name_list: game_name_list,
 };

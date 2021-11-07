@@ -4,7 +4,7 @@ const return_time = require("./helper_functions").return_time;
 const express = require("./imports").express;
 const router = express.Router();
 
-const database = require("./imports").database;
+const database_utils = require("./imports").database_utils;
 const bcrypt = require("./imports").bcrypt;
 
 const account = require("./account");
@@ -28,14 +28,14 @@ router.post("/profile/*", profile);
 router.get("/score/*", score);
 router.post("/score/*",score);
 
-router.get("/", function (req, res) {
+router.get("/", async function (req, res) {
     if (req.session.loggedin) {
         res.render("home", {
             loggedin: req.session.loggedin,
             is_mobile: req.useragent.isMobile,
         });
     } else {
-        checkCookie(req, res, async () => {
+        await checkCookie(req, res, async () => {
             res.render("home", {
                 loggedin: req.session.loggedin,
                 is_mobile: req.useragent.isMobile,
@@ -58,7 +58,7 @@ router.get("/about", function (req, res) {
 });
 
 // Checks if user has a remember me cookie
-function checkCookie(req, res, next) {
+async function checkCookie(req, res, next) {
     let cookies = req.headers.cookie;
     if (cookies) {
         let arr = cookies.split('; ');
@@ -76,19 +76,16 @@ function checkCookie(req, res, next) {
         }
 
         if (validator) {
-            database.get("SELECT * FROM auth_tokens WHERE selector = ?", [selector], async function (err, result) {
-                if (err) {
-                    console.log(err);
-                }
-                if (result) {
-                    let check = await bcrypt.compare(validator, result.hashedValidator);
-                    if (check) {
-                        req.session.loggedin = true;
-                        req.session.username = result.username;
-                        next();
-                    } else next();
+            let rows = database_utils.run_query("SELECT * FROM auth_tokens WHERE selector = ?", [selector]);
+            if (rows && rows.length > 0) {
+                let result = rows[0];
+                let check = await bcrypt.compare(validator, result.hashedValidator);
+                if (check) {
+                    req.session.loggedin = true;
+                    req.session.username = result.username;
+                    next();
                 } else next();
-            });
+            } else next();
         } else next();
     } else next();
 }
