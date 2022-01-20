@@ -50,9 +50,10 @@ router.get("/profile/:username", function (req, res) {
         let score_table = [];
         for (let list_index=0; list_index<game_list.length; list_index++) {
             let score_row = [];
-            let db_score_row = database_utils.run_query(`SELECT * FROM ${game_list[list_index]} WHERE username = ?`, [req.params.username]);
+            let db_query = database_utils.run_query(`SELECT * FROM ${game_list[list_index]} WHERE username = ?`, [req.params.username]);
             score_row.push(game_list[list_index]);
-            if (db_score_row && db_score_row.length > 0) {
+            if (db_query !== undefined && db_query.length > 0) {
+                let db_score_row = db_query[0];
                 if (db_score_row.pc_score === undefined) {
                     score_row.push(0);
                 } else {
@@ -68,15 +69,13 @@ router.get("/profile/:username", function (req, res) {
                 score_row.push(0);
             }
             score_table.push(score_row);
-            if (list_index === game_list.length - 1) {
-                res.render("public_profile", {
-                    score_table: score_table,
-                    loggedin: req.session.loggedin,
-                    username: req.params.username,
-                    names: game_name_list,
-                });
-            }
         }
+        res.render("public_profile", {
+            score_table: score_table,
+            loggedin: req.session.loggedin,
+            username: req.params.username,
+            names: game_name_list,
+        });
     } else {
         res.render("message", {
             loggedin: req.session.loggedin,
